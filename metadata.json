@@ -1,0 +1,5 @@
+{
+  "name": "Healthcare Care Orchestrator",
+  "description": "An end-to-end patient journey orchestrator using Google ADK, managing appointment triage, scheduling, and insurance pre-authorization.",
+  "requestFramePermissions": []
+}
