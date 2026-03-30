@@ -18,7 +18,7 @@ To run the **official Google ADK Web UI** on your local machine:
     ```
 4.  **Start the ADK Web UI**:
     ```bash
-    adk web agent.py
+    adk web agents
     ```
     This will launch the official ADK interface in your browser (usually at `http://localhost:8000`).
 
@@ -26,9 +26,10 @@ To run the **official Google ADK Web UI** on your local machine:
 
 This project follows the standard ADK structure for professional agentic workflows:
 
--   `agent.py`: The main orchestrator logic. Defines the **Appointment**, **Scheduling**, and **Insurance** agents and their sequential handoff flow.
--   `tools.py`: Contains the custom Python tools (e.g., `check_provider_calendar`, `verify_insurance_eligibility`) that agents use to interact with external systems.
--   `__init__.py`: Standard Python package initialization.
+-   `agents/`: Directory containing the agent logic.
+    -   `agent.py`: The main orchestrator logic. Defines the **Appointment**, **Scheduling**, and **Insurance** agents and their sequential handoff flow.
+    -   `tools.py`: Contains the custom Python tools (e.g., `check_provider_calendar`, `verify_insurance_eligibility`) that agents use to interact with external systems.
+    -   `__init__.py`: Standard Python package initialization.
 -   `src/`: A React-based **simulation** of the ADK UI for quick browser previews.
 
 ## 🤖 The Digital Assembly Line
