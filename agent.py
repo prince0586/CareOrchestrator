@@ -1,6 +1,6 @@
 import os
 from google.adk.agents import LlmAgent, SequentialAgent
-from .tools import check_provider_calendar, verify_insurance_eligibility
+from tools import check_provider_calendar, verify_insurance_eligibility
 
 # Step 1: Triage and Appointment
 appointment_agent = LlmAgent(

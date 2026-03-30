@@ -29,7 +29,6 @@ This project follows the standard ADK structure for professional agentic workflo
 -   `agent.py`: The main orchestrator logic. Defines the **Appointment**, **Scheduling**, and **Insurance** agents and their sequential handoff flow.
 -   `tools.py`: Contains the custom Python tools (e.g., `check_provider_calendar`, `verify_insurance_eligibility`) that agents use to interact with external systems.
 -   `__init__.py`: Standard Python package initialization.
--   `src/`: A React-based **simulation** of the ADK UI for quick browser previews.
 
 ## 🤖 The Digital Assembly Line
 
