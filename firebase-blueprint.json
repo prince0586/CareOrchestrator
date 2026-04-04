@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "PatientProfile": {
+      "title": "Patient Profile",
+      "description": "Core patient demographic and medical history information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "fullName": { "type": "string" },
+        "dateOfBirth": { "type": "string", "format": "date" },
+        "medicalHistory": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "fullName", "dateOfBirth"]
+    },
+    "CareLog": {
+      "title": "Care Log",
+      "description": "Longitudinal tracking of medication and vitals.",
+      "type": "object",
+      "properties": {
+        "patientId": { "type": "string" },
+        "type": { "type": "string", "enum": ["medication", "vital"] },
+        "name": { "type": "string", "description": "Medication name or vital type (e.g., BP)" },
+        "value": { "type": "string", "description": "Dosage or vital reading" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["taken", "missed", "recorded"] }
+      },
+      "required": ["patientId", "type", "name", "value", "timestamp"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Communication between patient and provider.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "role": { "type": "string", "enum": ["patient", "provider"] }
+      },
+      "required": ["senderId", "receiverId", "content", "timestamp", "role"]
+    },
+    "ClinicalSummary": {
+      "title": "Clinical Summary",
+      "description": "Gemini-translated clinical notes for patients.",
+      "type": "object",
+      "properties": {
+        "patientId": { "type": "string" },
+        "originalNote": { "type": "string" },
+        "translatedSummary": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["patientId", "originalNote", "translatedSummary", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/patients/{patientId}": {
+      "schema": "PatientProfile",
+      "description": "Patient profile document."
+    },
+    "/patients/{patientId}/logs/{logId}": {
+      "schema": "CareLog",
+      "description": "Patient care logs for medication and vitals."
+    },
+    "/patients/{patientId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Patient-provider messages."
+    },
+    "/patients/{patientId}/summaries/{summaryId}": {
+      "schema": "ClinicalSummary",
+      "description": "Simplified clinical summaries."
+    }
+  }
+}

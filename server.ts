@@ -1,18 +1,43 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { createServer as createViteServer } from "vite";
+import { translateClinicalNote, draftProviderResponse, analyzeCareLogs } from "./src/services/geminiService.js";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // API routes go here
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
+  app.use(express.json());
+
+  // API Routes
+  app.post("/api/translate", async (req, res) => {
+    try {
+      const { note } = req.body;
+      const summary = await translateClinicalNote(note);
+      res.json({ summary });
+    } catch (error) {
+      res.status(500).json({ error: "Translation failed" });
+    }
+  });
+
+  app.post("/api/draft-response", async (req, res) => {
+    try {
+      const { message, history } = req.body;
+      const draft = await draftProviderResponse(message, history || []);
+      res.json({ draft });
+    } catch (error) {
+      res.status(500).json({ error: "Drafting failed" });
+    }
+  });
+
+  app.post("/api/analyze-logs", async (req, res) => {
+    try {
+      const { logs } = req.body;
+      const analysis = await analyzeCareLogs(logs);
+      res.json({ analysis });
+    } catch (error) {
+      res.status(500).json({ error: "Analysis failed" });
+    }
   });
 
   // Vite middleware for development
@@ -23,10 +48,10 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 

@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(patientId) {
+      return isAuthenticated() && request.auth.uid == patientId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         request.auth.token.email == "princeradadia@gmail.com");
+    }
+
+    // Patient Profiles
+    match /patients/{patientId} {
+      allow read, write: if isOwner(patientId) || isAdmin();
+      
+      // Care Logs
+      match /logs/{logId} {
+        allow read, write: if isOwner(patientId) || isAdmin();
+      }
+      
+      // Messages
+      match /messages/{messageId} {
+        allow read, write: if isOwner(patientId) || isAdmin();
+      }
+      
+      // Summaries
+      match /summaries/{summaryId} {
+        allow read, write: if isOwner(patientId) || isAdmin();
+      }
+    }
+    
+    // Admin User Profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId && 
+        (!('role' in request.resource.data) || request.resource.data.role == resource.data.role || isAdmin());
+    }
+  }
+}

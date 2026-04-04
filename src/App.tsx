@@ -1,213 +1,168 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Stethoscope, 
-  Calendar, 
-  ShieldCheck, 
-  Send, 
+  HeartPulse, 
+  MessageSquare, 
+  Activity, 
+  FileText, 
   User, 
-  Bot, 
+  LogOut, 
+  Send, 
   CheckCircle2, 
   Loader2,
-  HeartPulse,
-  Info,
+  Calendar,
+  Plus,
   RefreshCw
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  signOut,
+  type User as FirebaseUser
+} from 'firebase/auth';
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  onSnapshot, 
+  orderBy, 
+  doc,
+  setDoc,
+  getDoc
+} from 'firebase/firestore';
+import { auth, db } from './lib/firebase';
+import { 
+  PatientProfile, 
+  CareLog, 
+  Message, 
+  ClinicalSummary,
+  CareLogSchema,
+  MessageSchema,
+  ClinicalSummarySchema
+} from './models/schemas';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-}
-
-interface AgentStep {
-  id: string;
-  name: string;
-  status: 'pending' | 'active' | 'completed';
-  description: string;
-  icon: React.ReactNode;
-}
-
 const App: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: "Hello! I'm your **Healthcare Care Orchestrator**. I can help you understand medical conditions, check hospital policies, or schedule an appointment with one of our specialists. How can I assist you today?",
-      timestamp: new Date()
-    }
-  ]);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [profile, setProfile] = useState<PatientProfile | null>(null);
+  const [activeTab, setActiveTab] = useState<'chat' | 'tracker' | 'summary'>('chat');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [careLogs, setCareLogs] = useState<CareLog[]>([]);
+  const [summaries, setSummaries] = useState<ClinicalSummary[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [steps, setSteps] = useState<AgentStep[]>([
-    { 
-      id: 'knowledge', 
-      name: 'Knowledge Retrieval', 
-      status: 'pending', 
-      description: 'Fetching medical info from Wikipedia & KB',
-      icon: <Info className="w-5 h-5" />
-    },
-    { 
-      id: 'appointment', 
-      name: 'Appointment Triage', 
-      status: 'pending', 
-      description: 'Gathering patient details and symptoms',
-      icon: <Stethoscope className="w-5 h-5" />
-    },
-    { 
-      id: 'scheduling', 
-      name: 'Provider Scheduling', 
-      status: 'pending', 
-      description: 'Checking availability and booking slot',
-      icon: <Calendar className="w-5 h-5" />
-    },
-    { 
-      id: 'insurance', 
-      name: 'Insurance Authorization', 
-      status: 'pending', 
-      description: 'Verifying eligibility and pre-authorization',
-      icon: <ShieldCheck className="w-5 h-5" />
-    }
-  ]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        // Fetch or Create Profile
+        const profileRef = doc(db, 'patients', currentUser.uid);
+        const profileSnap = await getDoc(profileRef);
+        if (profileSnap.exists()) {
+          setProfile(profileSnap.data() as PatientProfile);
+        } else {
+          const newProfile: PatientProfile = {
+            uid: currentUser.uid,
+            fullName: currentUser.displayName || 'Anonymous Patient',
+            dateOfBirth: '1990-01-01', // Default
+            medicalHistory: [],
+            createdAt: new Date().toISOString()
+          };
+          await setDoc(profileRef, newProfile);
+          setProfile(newProfile);
+        }
+      } else {
+        setProfile(null);
+      }
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // Real-time Listeners
+  useEffect(() => {
+    if (!user) return;
+
+    const qMessages = query(
+      collection(db, 'patients', user.uid, 'messages'),
+      orderBy('timestamp', 'asc')
+    );
+    const unsubMessages = onSnapshot(qMessages, (snap) => {
+      setMessages(snap.docs.map(d => d.data() as Message));
+    });
+
+    const qLogs = query(
+      collection(db, 'patients', user.uid, 'logs'),
+      orderBy('timestamp', 'desc')
+    );
+    const unsubLogs = onSnapshot(qLogs, (snap) => {
+      setCareLogs(snap.docs.map(d => d.data() as CareLog));
+    });
+
+    const qSummaries = query(
+      collection(db, 'patients', user.uid, 'summaries'),
+      orderBy('timestamp', 'desc')
+    );
+    const unsubSummaries = onSnapshot(qSummaries, (snap) => {
+      setSummaries(snap.docs.map(d => d.data() as ClinicalSummary));
+    });
+
+    return () => {
+      unsubMessages();
+      unsubLogs();
+      unsubSummaries();
+    };
+  }, [user]);
+
+  const handleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  const handleLogout = () => signOut(auth);
 
-  const handleSend = async () => {
-    if (!input.trim() || isProcessing) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input,
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    const currentInput = input.toLowerCase();
-    setInput('');
+  const sendMessage = async () => {
+    if (!input.trim() || !user || isProcessing) return;
     setIsProcessing(true);
-
-    // Reset steps
-    setSteps(prev => prev.map(s => ({ ...s, status: 'pending' })));
-
     try {
-      // Determine workflow based on intent
-      const isGreeting = /^(hi|hello|hey|greetings|morning|afternoon|evening)/i.test(currentInput);
-      const isCapabilities = /(what can you do|your capabilities|how can you help|help me)/i.test(currentInput);
-      const isGeneralQuery = /(what is|tell me about|how does|info on|wikipedia|search for|explain|describe|definition)/i.test(currentInput);
-      const isAppointment = /(schedule|book|appointment|see a doctor|triage|symptoms|need a|pain|ache|hurt|sick|ill|problem|issue|checkup|exam)/i.test(currentInput);
-
-      // Priority 1: Appointment / Symptoms (Full Orchestration)
-      if (isAppointment) {
-        // Proceed to full orchestration below
-      } 
-      // Priority 2: Capabilities
-      else if (isCapabilities) {
-        await new Promise(r => setTimeout(r, 1000));
-        const assistantMessage: Message = {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: "I am your **Healthcare Care Orchestrator**. Here is how I can assist you:\n\n" +
-                   "📚 **Medical Knowledge**: I can search Wikipedia and our internal knowledge base to explain conditions, treatments, and hospital policies.\n" +
-                   "🩺 **Symptom Triage**: I can help you understand your symptoms and determine the right type of specialist care.\n" +
-                   "📅 **Smart Scheduling**: I can check provider availability in real-time and book appointments that fit your schedule.\n" +
-                   "🛡️ **Insurance Pre-Auth**: I can verify your coverage and automatically submit pre-authorization requests to your payer.\n\n" +
-                   "What would you like to start with today?",
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-        setIsProcessing(false);
-        return;
-      }
-      // Priority 3: General Query (Knowledge Only)
-      else if (isGeneralQuery) {
-        // Proceed to Step 1 only logic below
-      }
-      // Priority 4: Simple Greeting
-      else if (isGreeting) {
-        await new Promise(r => setTimeout(r, 800));
-        const assistantMessage: Message = {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: "Hello! I'm here to orchestrate your healthcare journey. You can ask me about medical conditions, hospital policies, or request to schedule an appointment. How can I help you right now?",
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-        setIsProcessing(false);
-        return;
-      }
-      // Default: Assume they want help/orchestration if it's not a clear greeting
-      else {
-        // Proceed to full orchestration
-      }
-
-      // Step 1: Knowledge Agent
-      setSteps(prev => prev.map((s, i) => i === 0 ? { ...s, status: 'active' } : s));
-      await new Promise(r => setTimeout(r, 1500));
-      setSteps(prev => prev.map((s, i) => i === 0 ? { ...s, status: 'completed' } : s));
-      
-      // Extract topic for Wikipedia simulation
-      const topicMatch = currentInput.match(/(?:what is|about|for|info on|search|explain|describe) ([\w\s]+)/i) || [null, currentInput];
-      const topic = topicMatch[1] ? topicMatch[1].trim() : currentInput;
-      const wikiSummary = topic !== "your request" 
-        ? `**${topic.charAt(0).toUpperCase() + topic.slice(1)}** is a subject I've researched in our medical database and Wikipedia. It involves specialized care and specific clinical protocols.`
-        : "I've retrieved the relevant medical context and hospital policies for your request.";
-
-      // If it was just a query, stop here
-      if (isGeneralQuery && !isAppointment) {
-        const assistantMessage: Message = {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: `I've retrieved the information you requested: \n\n📚 **Knowledge Retrieval**: \n${wikiSummary} \n\nWould you like me to proceed with scheduling an appointment or checking insurance coverage for this?`,
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-        setIsProcessing(false);
-        return;
-      }
-
-      // Step 2: Appointment Agent
-      setSteps(prev => prev.map((s, i) => i === 1 ? { ...s, status: 'active' } : s));
-      await new Promise(r => setTimeout(r, 1500));
-      setSteps(prev => prev.map((s, i) => i === 1 ? { ...s, status: 'completed' } : s));
-
-      // Step 3: Scheduling Agent
-      setSteps(prev => prev.map((s, i) => i === 2 ? { ...s, status: 'active' } : s));
-      await new Promise(r => setTimeout(r, 2000));
-      setSteps(prev => prev.map((s, i) => i === 2 ? { ...s, status: 'completed' } : s));
-
-      // Step 4: Insurance Agent
-      setSteps(prev => prev.map((s, i) => i === 3 ? { ...s, status: 'active' } : s));
-      await new Promise(r => setTimeout(r, 1500));
-      setSteps(prev => prev.map((s, i) => i === 3 ? { ...s, status: 'completed' } : s));
-
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `I've successfully orchestrated your care journey for **${topic}**. \n\n` +
-                 `📚 **Medical Context**: ${wikiSummary}\n\n` +
-                 `✅ **Appointment**: Confirmed for next Tuesday at 10:00 AM.\n\n` +
-                 `🛡️ **Insurance**: Pre-authorization has been submitted and approved according to our latest policy.`,
-        timestamp: new Date()
+      const newMessage: Message = {
+        senderId: user.uid,
+        receiverId: 'provider-system',
+        content: input,
+        timestamp: new Date().toISOString(),
+        role: 'patient'
       };
-      setMessages(prev => [...prev, assistantMessage]);
+      MessageSchema.parse(newMessage);
+      await addDoc(collection(db, 'patients', user.uid, 'messages'), newMessage);
+      setInput('');
+
+      // Draft provider response (simulated backend call)
+      const res = await fetch('/api/draft-response', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: input, history: profile?.medicalHistory || [] })
+      });
+      const { draft } = await res.json();
+      
+      const providerResponse: Message = {
+        senderId: 'provider-system',
+        receiverId: user.uid,
+        content: draft,
+        timestamp: new Date().toISOString(),
+        role: 'provider'
+      };
+      await addDoc(collection(db, 'patients', user.uid, 'messages'), providerResponse);
     } catch (error) {
       console.error(error);
     } finally {
@@ -215,189 +170,365 @@ const App: React.FC = () => {
     }
   };
 
-  const handleNewChat = () => {
-    setMessages([
-      {
-        id: '1',
-        role: 'assistant',
-        content: "Hello! I'm your **Healthcare Care Orchestrator**. I can help you understand medical conditions, check hospital policies, or schedule an appointment with one of our specialists. How can I assist you today?",
-        timestamp: new Date()
-      }
-    ]);
-    setSteps(prev => prev.map(s => ({ ...s, status: 'pending' })));
-    setInput('');
+  const addCareLog = async (type: 'medication' | 'vital', name: string, value: string) => {
+    if (!user) return;
+    try {
+      const newLog: CareLog = {
+        patientId: user.uid,
+        type,
+        name,
+        value,
+        timestamp: new Date().toISOString(),
+        status: type === 'medication' ? 'taken' : 'recorded'
+      };
+      CareLogSchema.parse(newLog);
+      await addDoc(collection(db, 'patients', user.uid, 'logs'), newLog);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
+  const translateNote = async (note: string) => {
+    if (!user || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note })
+      });
+      const { summary } = await res.json();
+      
+      const newSummary: ClinicalSummary = {
+        patientId: user.uid,
+        originalNote: note,
+        translatedSummary: summary,
+        timestamp: new Date().toISOString()
+      };
+      ClinicalSummarySchema.parse(newSummary);
+      await addDoc(collection(db, 'patients', user.uid, 'summaries'), newSummary);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-6">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 text-center border border-slate-100">
+          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-6 shadow-lg">
+            <HeartPulse className="w-10 h-10" />
+          </div>
+          <h1 className="text-3xl font-bold text-slate-900 mb-2">CareOrchestrator</h1>
+          <p className="text-slate-500 mb-8">Production-grade healthcare coordination for patients and providers.</p>
+          <button 
+            onClick={handleLogin}
+            className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-3"
+          >
+            <User className="w-5 h-5" />
+            Sign in with Google
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-screen bg-slate-50 font-sans">
-      {/* Sidebar - Digital Assembly Line */}
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+      {/* Sidebar */}
       <div className="w-80 bg-white border-r border-slate-200 flex flex-col shadow-sm">
         <div className="p-6 border-b border-slate-100 bg-slate-900 text-white">
           <div className="flex items-center gap-3 mb-2">
             <HeartPulse className="w-6 h-6 text-indigo-400" />
-            <h1 className="font-bold text-lg tracking-tight">Care Orchestrator</h1>
+            <h1 className="font-bold text-lg tracking-tight">CareOrchestrator</h1>
           </div>
-          <p className="text-slate-400 text-xs uppercase tracking-widest font-semibold">Digital Assembly Line</p>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {steps.map((step) => (
-            <div 
-              key={step.id}
-              className={cn(
-                "p-4 rounded-xl border transition-all duration-300",
-                step.status === 'active' ? "bg-indigo-50 border-indigo-200 shadow-sm scale-[1.02]" : 
-                step.status === 'completed' ? "bg-emerald-50 border-emerald-100" : 
-                "bg-white border-slate-100 opacity-60"
-              )}
-            >
-              <div className="flex items-start gap-3">
-                <div className={cn(
-                  "p-2 rounded-lg",
-                  step.status === 'active' ? "bg-indigo-600 text-white animate-pulse" : 
-                  step.status === 'completed' ? "bg-emerald-500 text-white" : 
-                  "bg-slate-100 text-slate-400"
-                )}>
-                  {step.status === 'completed' ? <CheckCircle2 className="w-5 h-5" /> : step.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className={cn(
-                    "font-semibold text-sm",
-                    step.status === 'active' ? "text-indigo-900" : 
-                    step.status === 'completed' ? "text-emerald-900" : 
-                    "text-slate-600"
-                  )}>
-                    {step.name}
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    {step.description}
-                  </p>
-                </div>
-              </div>
-              {step.status === 'active' && (
-                <div className="mt-3 h-1 bg-slate-200 rounded-full overflow-hidden">
-                  <motion.div 
-                    className="h-full bg-indigo-600"
-                    initial={{ width: "0%" }}
-                    animate={{ width: "100%" }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                  />
-                </div>
-              )}
-            </div>
-          ))}
+          <div className="flex items-center gap-2 text-slate-400 text-xs">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Cloud Native Sync Active
+          </div>
         </div>
 
-        <div className="p-4 border-t border-slate-100 bg-slate-50">
-          <div className="flex items-center gap-2 text-[10px] text-slate-400 uppercase tracking-widest font-bold">
-            <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            System Status: Operational
-          </div>
-        </div>
-      </div>
-
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col relative">
-        {/* Chat Header */}
-        <div className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shadow-sm z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-white">
-              <Bot className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="font-bold text-slate-900">Healthcare Assistant</h2>
-              <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-tighter">Active Session</p>
-            </div>
-          </div>
+        <div className="flex-1 p-4 space-y-2">
           <button 
-            onClick={handleNewChat}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors border border-slate-200"
+            onClick={() => setActiveTab('chat')}
+            className={cn(
+              "w-full flex items-center gap-3 p-4 rounded-2xl font-semibold transition-all",
+              activeTab === 'chat' ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:bg-slate-50"
+            )}
           >
-            <RefreshCw className="w-4 h-4" />
-            New Chat
+            <MessageSquare className="w-5 h-5" />
+            Patient Interaction
+          </button>
+          <button 
+            onClick={() => setActiveTab('tracker')}
+            className={cn(
+              "w-full flex items-center gap-3 p-4 rounded-2xl font-semibold transition-all",
+              activeTab === 'tracker' ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <Activity className="w-5 h-5" />
+            Care Tracker
+          </button>
+          <button 
+            onClick={() => setActiveTab('summary')}
+            className={cn(
+              "w-full flex items-center gap-3 p-4 rounded-2xl font-semibold transition-all",
+              activeTab === 'summary' ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <FileText className="w-5 h-5" />
+            Clinical Summaries
           </button>
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-slate-50/50">
-          <AnimatePresence initial={false}>
-            {messages.map((message) => (
-              <motion.div
-                key={message.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={cn(
-                  "flex gap-4 max-w-3xl",
-                  message.role === 'user' ? "ml-auto flex-row-reverse" : ""
-                )}
-              >
-                <div className={cn(
-                  "w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm",
-                  message.role === 'user' ? "bg-indigo-600 text-white" : "bg-white text-slate-900 border border-slate-200"
-                )}>
-                  {message.role === 'user' ? <User className="w-6 h-6" /> : <Bot className="w-6 h-6" />}
-                </div>
-                <div className={cn(
-                  "p-5 rounded-2xl shadow-sm",
-                  message.role === 'user' ? "bg-indigo-600 text-white rounded-tr-none" : "bg-white text-slate-800 border border-slate-100 rounded-tl-none"
-                )}>
-                  <div className="markdown-body text-sm text-slate-600">
-                    <ReactMarkdown>{message.content}</ReactMarkdown>
-                  </div>
-                  <p className={cn(
-                    "text-[10px] mt-3 font-medium opacity-50",
-                    message.role === 'user' ? "text-white" : "text-slate-400"
-                  )}>
-                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          {isProcessing && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex gap-4"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm">
-                <Loader2 className="w-6 h-6 animate-spin" />
-              </div>
-              <div className="bg-white border border-slate-100 p-5 rounded-2xl rounded-tl-none shadow-sm">
-                <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce" />
-                  <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce [animation-delay:0.2s]" />
-                  <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce [animation-delay:0.4s]" />
-                </div>
-              </div>
-            </motion.div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input Area */}
-        <div className="p-8 bg-white border-t border-slate-200">
-          <div className="max-w-4xl mx-auto relative">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Describe your symptoms or ask a medical question..."
-              className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-6 pr-16 focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 transition-all text-slate-800 placeholder:text-slate-400"
-            />
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || isProcessing}
-              className="absolute right-2 top-2 bottom-2 px-4 bg-slate-900 text-white rounded-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
-            >
-              <Send className="w-5 h-5" />
-            </button>
+        <div className="p-4 border-t border-slate-100">
+          <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl mb-3">
+            <img src={user.photoURL || ''} className="w-10 h-10 rounded-full border-2 border-white shadow-sm" alt="Profile" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold truncate">{user.displayName}</p>
+              <p className="text-[10px] text-slate-400 truncate uppercase tracking-widest font-bold">Patient</p>
+            </div>
           </div>
-          <p className="text-center text-[10px] text-slate-400 mt-4 uppercase tracking-widest font-bold">
-            Healthcare Orchestrator v2.0 • Powered by Google ADK
-          </p>
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 p-3 text-slate-400 hover:text-rose-600 transition-colors text-sm font-bold"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign Out
+          </button>
         </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col relative bg-white">
+        {activeTab === 'chat' && (
+          <>
+            <div className="h-16 border-b border-slate-100 flex items-center justify-between px-8 bg-white/80 backdrop-blur-md z-10">
+              <h2 className="font-bold text-slate-900">Provider Communication</h2>
+              <div className="flex items-center gap-2 text-[10px] font-bold text-indigo-600 uppercase tracking-widest">
+                <RefreshCw className="w-3 h-3 animate-spin-slow" />
+                Real-time Sync
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-slate-50/30">
+              {messages.map((msg, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={cn(
+                    "flex gap-4 max-w-2xl",
+                    msg.role === 'patient' ? "ml-auto flex-row-reverse" : ""
+                  )}
+                >
+                  <div className={cn(
+                    "w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm",
+                    msg.role === 'patient' ? "bg-indigo-600 text-white" : "bg-white border border-slate-200 text-slate-900"
+                  )}>
+                    {msg.role === 'patient' ? <User className="w-5 h-5" /> : <HeartPulse className="w-5 h-5" />}
+                  </div>
+                  <div className={cn(
+                    "p-5 rounded-3xl shadow-sm",
+                    msg.role === 'patient' ? "bg-indigo-600 text-white rounded-tr-none" : "bg-white border border-slate-100 text-slate-800 rounded-tl-none"
+                  )}>
+                    <div className="prose prose-sm max-w-none prose-headings:text-inherit prose-p:leading-relaxed">
+                      <ReactMarkdown>
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
+                    <p className={cn(
+                      "text-[10px] mt-2 font-bold uppercase tracking-widest opacity-50",
+                      msg.role === 'patient' ? "text-indigo-100" : "text-slate-400"
+                    )}>
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </motion.div>
+              ))}
+              {isProcessing && (
+                <div className="flex gap-4 max-w-2xl">
+                  <div className="w-10 h-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  </div>
+                  <div className="bg-slate-100 p-4 rounded-3xl rounded-tl-none animate-pulse text-slate-400 text-sm">
+                    Provider is drafting a response...
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-6 bg-white border-t border-slate-100">
+              <div className="max-w-4xl mx-auto relative">
+                <input 
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                  placeholder="Message your care team..."
+                  className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-6 pr-16 focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
+                />
+                <button 
+                  onClick={sendMessage}
+                  disabled={!input.trim() || isProcessing}
+                  className="absolute right-2 top-2 bottom-2 px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+                >
+                  <Send className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'tracker' && (
+          <div className="flex-1 overflow-y-auto p-8 space-y-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">Care Tracker</h2>
+                <p className="text-slate-500">Monitor your medication and vital signs.</p>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => addCareLog('medication', 'Aspirin', '81mg')}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold hover:bg-indigo-100 transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  Log Med
+                </button>
+                <button 
+                  onClick={() => addCareLog('vital', 'Blood Pressure', '120/80')}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all"
+                >
+                  <Activity className="w-4 h-4" />
+                  Log Vital
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+                <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-indigo-600" />
+                  Recent Activity
+                </h3>
+                <div className="space-y-4">
+                  {careLogs.map((log, i) => (
+                    <div key={i} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div className={cn(
+                        "w-10 h-10 rounded-xl flex items-center justify-center",
+                        log.type === 'medication' ? "bg-indigo-100 text-indigo-600" : "bg-emerald-100 text-emerald-600"
+                      )}>
+                        {log.type === 'medication' ? <HeartPulse className="w-5 h-5" /> : <Activity className="w-5 h-5" />}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold text-sm">{log.name}</p>
+                        <p className="text-xs text-slate-500">{log.value} • {new Date(log.timestamp).toLocaleString()}</p>
+                      </div>
+                      <div className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 bg-white rounded-lg border border-slate-200">
+                        {log.status}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-indigo-600 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
+                <div className="relative z-10">
+                  <h3 className="text-xl font-bold mb-2">Longitudinal Trends</h3>
+                  <p className="text-indigo-100 text-sm mb-6">Gemini is analyzing your care data for clinical insights.</p>
+                  <div className="space-y-4">
+                    <div className="h-2 bg-indigo-400/30 rounded-full overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: '85%' }}
+                        className="h-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.5)]"
+                      />
+                    </div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-indigo-200">Medication Adherence: 85%</p>
+                  </div>
+                </div>
+                <Activity className="absolute -right-8 -bottom-8 w-48 h-48 text-indigo-500/20" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'summary' && (
+          <div className="flex-1 overflow-y-auto p-8 space-y-8">
+            <div className="max-w-3xl mx-auto space-y-8">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">Clinical Summaries</h2>
+                <p className="text-slate-500">Translate complex clinical notes into simple patient summaries.</p>
+              </div>
+
+              <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+                <textarea 
+                  placeholder="Paste clinical note here..."
+                  className="w-full h-32 bg-slate-50 border-none rounded-2xl p-4 focus:ring-2 focus:ring-indigo-500 transition-all font-medium mb-4"
+                  id="clinical-note-input"
+                />
+                <button 
+                  onClick={() => {
+                    const el = document.getElementById('clinical-note-input') as HTMLTextAreaElement;
+                    if (el.value) translateNote(el.value);
+                  }}
+                  disabled={isProcessing}
+                  className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
+                  Generate Simplified Summary
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {summaries.map((sum, i) => (
+                  <motion.div 
+                    key={i}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="font-bold">Summary Report</p>
+                          <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">
+                            {new Date(sum.timestamp).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Original Clinical Note</p>
+                        <p className="text-sm text-slate-600 italic bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                          {sum.originalNote}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mb-2">Patient-Friendly Summary</p>
+                        <div className="prose prose-sm text-slate-800 font-medium">
+                          <ReactMarkdown>{sum.translatedSummary}</ReactMarkdown>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

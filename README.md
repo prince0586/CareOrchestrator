@@ -1,102 +1,46 @@
-# 🏥 Healthcare Care Orchestrator (Google ADK)
+# CareOrchestrator
 
-An end-to-end patient journey orchestrator built with the **Google Agent Development Kit (ADK)**. This system manages appointment triage, provider scheduling, and insurance pre-authorization using a multi-agent "Digital Assembly Line" architecture.
+CareOrchestrator is a production-grade, cloud-native healthcare coordination system designed to improve communication and coordination between patients and healthcare providers.
 
-## 🚀 Getting Started
+## Architecture & Cloud Native Integration
 
-Follow these steps to set up the project locally.
+- **Backend**: Built as an asynchronous Express application (Node.js equivalent of FastAPI) optimized for Google Cloud Run.
+- **Database**: Utilizes **Google Cloud Firestore** for real-time patient-provider data synchronization and longitudinal care tracking.
+- **AI Services**: Powered by **Gemini 3.1 Pro** and **Gemini 3 Flash** for clinical-to-patient translation, provider response drafting, and care log analysis.
+- **Security**: Implements **Zod** for strict type-checking and data validation (equivalent to Pydantic V2).
+- **Authentication**: Uses **Firebase Authentication** for secure patient and provider access.
+- **Observability**: Integrated with Google Cloud Logging for structured interaction monitoring.
 
-### 1. Clone the Repository
+## Core Features
 
+### 1. Patient Interaction
+A real-time messaging interface that allows patients to communicate with their care team. Gemini drafts professional and empathetic responses for providers based on patient history.
+
+### 2. Care Tracker
+A longitudinal tracking system for medication adherence and vital signs. Patients can log their daily health data, which is then analyzed by Gemini for clinical insights and trends.
+
+### 3. Clinical Summarization
+A "Clinical-to-Patient" translation module that simplifies complex medical jargon into actionable, easy-to-understand summaries for patients.
+
+## Security & Performance
+
+- **PII Scrubbing**: Gemini prompts include a dedicated layer to scrub Personally Identifiable Information (PII) before processing health data.
+- **Async I/O**: Non-blocking database and AI operations ensure high performance and scalability.
+- **Strict Validation**: All data inputs are validated against Zod schemas before being persisted to Firestore.
+- **Least Privilege**: Firestore security rules ensure patients can only access their own data, while providers have managed administrative access.
+
+## Testing Suite
+
+The project includes a comprehensive testing suite using **Vitest**:
+- **Unit Tests**: Core logic for clinical translation and response drafting.
+- **Integration Tests**: Data validation and Firestore schema compliance.
+- **Edge Case Tests**: Handling of malformed JSON, empty inputs, and invalid date formats.
+
+Run tests with:
 ```bash
-git clone https://github.com/prince0586/CareOrchestrator.git
-cd CareOrchestrator
+npm test
 ```
 
-### 2. Set Up Environment Variables
+## Deployment
 
-Create a `.env` file in the root directory and add your API keys:
-
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-GEN_FAST_MODEL=gemini-2.5-flash
-GEN_ADVANCED_MODEL=gemini-2.5-pro
-```
-
-### 3. Install Dependencies
-
-You'll need both Python (for ADK agents) and Node.js (for the React frontend).
-
-**Python Dependencies:**
-```bash
-pip install -r requirements.txt
-```
-
-**Node.js Dependencies:**
-```bash
-npm install
-```
-
-### 4. Run the Application
-
-**Option A: Official ADK Web UI (Python)**
-This launches the standard Google ADK interface for interacting with your agents.
-```bash
-adk web agents
-```
-*Usually accessible at `http://localhost:8000`.*
-
-**Option B: Custom Healthcare Dashboard (React + Express)**
-This launches the custom, healthcare-focused frontend simulation.
-```bash
-npm run dev
-```
-*Accessible at `http://localhost:3000`.*
-
-## 📂 Project Structure
-
--   `agents/`: Python-based agent logic using Google ADK.
-    -   `agent.py`: Orchestrator defining the sequential handoff flow.
-    -   `tools.py`: Custom tools for EHR calendar and insurance verification.
--   `src/`: React frontend source code (Tailwind CSS 4 + Framer Motion).
--   `server.ts`: Express server serving the React app and handling API routes.
--   `package.json`: Node.js project configuration and dependencies.
--   `requirements.txt`: Python package requirements.
-
-## 🤖 The Digital Assembly Line
-
-1.  **Knowledge Agent (Wikipedia + KB)**: Fetches medical summaries from Wikipedia and internal policies from the knowledge base to provide context.
-2.  **Appointment Agent**: Triages user symptoms and extracts patient details using the medical context.
-3.  **Scheduling Agent**: Uses `check_provider_calendar` to find and book slots.
-4.  **Insurance Agent**: Uses `verify_insurance_eligibility` and KB policies for coverage and pre-auth.
-
-## 🔗 Model Context Protocol (MCP) & ADK
-
-This project leverages **Google ADK** to implement core **Model Context Protocol (MCP)** concepts:
--   **Shared State**: Agents pass context (e.g., `patient_details`, `medical_context`) through a unified state protocol.
--   **Tool Interoperability**: Custom tools like `search_medical_knowledge` act as MCP-style resources that any agent can call.
--   **Sequential Orchestration**: The `SequentialAgent` manages the lifecycle and context handoffs between specialized models.
-
-This application is designed to be deployed to **Google Cloud Run**.
-
-### 1. Build the Frontend
-```bash
-npm run build
-```
-
-### 2. Deploy to Cloud Run
-You can deploy using the Google Cloud CLI:
-
-```bash
-gcloud run deploy healthcare-orchestrator \
-  --source . \
-  --env-vars-file .env \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated
-```
-
-Alternatively, use the **Deploy to Cloud Run** button in the AI Studio interface if available.
-
----
-*Built for professional-grade healthcare orchestration using Vertex AI and Google ADK.*
+The system is designed for deployment on **Google Cloud Run** using a multi-stage Docker build to minimize image size and dependency weight.

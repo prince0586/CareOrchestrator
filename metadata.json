@@ -1,5 +1,5 @@
 {
-  "name": "Healthcare Care Orchestrator",
-  "description": "A comprehensive healthcare journey orchestrator using Google ADK. Features include real-time Wikipedia medical retrieval, internal knowledge base integration, symptom triage, provider scheduling, and automated insurance pre-authorization.",
+  "name": "CareOrchestrator",
+  "description": "A production-grade, cloud-native healthcare coordination system. Features real-time patient-provider sync, clinical summarization, and longitudinal care tracking using Google Cloud Firestore and Gemini.",
   "requestFramePermissions": []
 }
