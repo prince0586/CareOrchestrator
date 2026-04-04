@@ -1,5 +1,5 @@
 {
   "name": "Healthcare Care Orchestrator",
-  "description": "An end-to-end patient journey orchestrator using Google ADK, managing appointment triage, scheduling, and insurance pre-authorization.",
+  "description": "A comprehensive healthcare journey orchestrator using Google ADK. Features include real-time Wikipedia medical retrieval, internal knowledge base integration, symptom triage, provider scheduling, and automated insurance pre-authorization.",
   "requestFramePermissions": []
 }

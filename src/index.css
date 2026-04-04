@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+:root {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+.markdown-body {
+  @apply max-w-none;
+}

@@ -1,4 +1,44 @@
+import requests
 from google.adk.tools import tool
+
+@tool
+def search_medical_knowledge(query: str) -> str:
+    """Searches Wikipedia for medical information about conditions or treatments.
+    
+    Args:
+        query: The medical term or condition to search for.
+        
+    Returns:
+        A summary of the medical information found.
+    """
+    try:
+        # Using Wikipedia API for real-time medical info
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{query.replace(' ', '_')}"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return f"Wikipedia Summary for {query}: {data.get('extract', 'No summary available.')}"
+        return f"Could not find Wikipedia information for '{query}'."
+    except Exception as e:
+        return f"Error searching Wikipedia: {str(e)}"
+
+@tool
+def query_knowledge_base(topic: str) -> str:
+    """Queries the internal Healthcare Knowledge Base for policy and procedure info.
+    
+    Args:
+        topic: The healthcare topic or policy to query.
+        
+    Returns:
+        Relevant policy information or guidelines.
+    """
+    knowledge_base = {
+        "appointment_policy": "Appointments must be cancelled at least 24 hours in advance to avoid a fee.",
+        "insurance_preauth": "Pre-authorization typically takes 3-5 business days for non-emergency procedures.",
+        "privacy": "All patient data is handled according to HIPAA regulations and encrypted at rest.",
+        "cardiology": "Our cardiology department specializes in non-invasive diagnostics and preventive care."
+    }
+    return knowledge_base.get(topic.lower(), "Topic not found in local knowledge base. Please consult the Knowledge Agent for external search.")
 
 @tool
 def check_provider_calendar(specialty: str, preferred_date: str) -> str:

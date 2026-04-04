@@ -1,16 +1,32 @@
 import os
 from google.adk.agents import LlmAgent, SequentialAgent
-from tools import check_provider_calendar, verify_insurance_eligibility
+from tools import (
+    check_provider_calendar, 
+    verify_insurance_eligibility, 
+    search_medical_knowledge, 
+    query_knowledge_base
+)
 
-# Step 1: Triage and Appointment
+# Step 1: Knowledge and Education (Wikipedia + Internal KB)
+knowledge_agent = LlmAgent(
+    name="KnowledgeAgent",
+    model=os.getenv("GEN_FAST_MODEL", "gemini-2.5-flash"),
+    instruction="""You are the Knowledge Agent. Your goal is to educate the patient about their symptoms or the care they are seeking.
+    Use Wikipedia to provide summaries of medical conditions and the internal knowledge base for policy information.
+    If the user asks about a condition, search for it. If they ask about policies, query the knowledge base.""",
+    tools=[search_medical_knowledge, query_knowledge_base],
+    output_key="medical_context"
+)
+
+# Step 2: Triage and Appointment
 appointment_agent = LlmAgent(
     name="AppointmentAgent",
     model=os.getenv("GEN_FAST_MODEL", "gemini-2.5-flash"),
-    instruction="You are the Appointment Agent. Gather patient details, symptoms, and the type of care required.",
+    instruction="You are the Appointment Agent. Using the {medical_context} if relevant, gather patient details, symptoms, and the type of care required.",
     output_key="patient_details" # Saves output to shared state
 )
 
-# Step 2: Scheduling
+# Step 3: Scheduling
 scheduling_agent = LlmAgent(
     name="SchedulingAgent",
     model=os.getenv("GEN_FAST_MODEL", "gemini-2.5-flash"),
@@ -19,17 +35,17 @@ scheduling_agent = LlmAgent(
     output_key="appointment_time" # Saves output to shared state
 )
 
-# Step 3: Insurance and Pre-Authorization
+# Step 4: Insurance and Pre-Authorization
 insurance_agent = LlmAgent(
     name="InsuranceAgent",
     model=os.getenv("GEN_ADVANCED_MODEL", "gemini-2.5-pro"),
-    instruction="You are the Insurance Agent. Using {patient_details} and the scheduled {appointment_time}, verify patient eligibility with the payer, check for prior authorization requirements, and submit the pre-auth forms.",
-    tools=[verify_insurance_eligibility] # Connects the custom insurance tool
+    instruction="You are the Insurance Agent. Using {patient_details} and the scheduled {appointment_time}, verify patient eligibility with the payer. Use the knowledge base to check for prior authorization requirements if needed.",
+    tools=[verify_insurance_eligibility, query_knowledge_base] # Connects the custom insurance tool
 )
 
 # The Orchestrator: Our Digital Assembly Line
 root_agent = SequentialAgent(
     name="HealthcareCareOrchestrator",
-    sub_agents=[appointment_agent, scheduling_agent, insurance_agent],
-    description="Orchestrates the end-to-end patient journey from appointment triage to insurance pre-authorization."
+    sub_agents=[knowledge_agent, appointment_agent, scheduling_agent, insurance_agent],
+    description="Orchestrates the end-to-end patient journey from medical knowledge retrieval to insurance pre-authorization."
 )
